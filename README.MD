@@ -1,3 +1,3 @@
-#rgsu-bot
+# rgsu-bot
 
 Всем кулити!
