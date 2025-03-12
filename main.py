@@ -10,6 +10,7 @@ from time import sleep
 import threading 
 import logging
 from decouple import config
+import bs4
 
 bot = telebot.TeleBot(config("BOT_TOKEN"))
 ADMIN_ID = int(config("ADMIN_ID"))
