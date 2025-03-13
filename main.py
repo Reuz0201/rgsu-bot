@@ -446,6 +446,7 @@ def answer_question_handler(message):
 def settings_handler(message):
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add(KeyboardButton("📌 Указать группу"))
+    markup.add(KeyboardButton("💸 Поддержка проекта"))
     markup.add(KeyboardButton("⬅️ Назад"))
     bot.send_message(message.chat.id, "Выберите настройку:", reply_markup=markup)
 
@@ -489,6 +490,10 @@ def send_schedule(message, user_group):
     
     # Отправляем расписание пользователю
     bot.send_message(message.chat.id, schedule)
+
+@bot.message_handler(func=lambda message: message.text == "💸 Поддержка проекта")
+def donation(message):
+    bot.send_message(message.chat.id, "Чтобы поддержать разработчика этого бота, вы можете отправить деньги по следующему номеру:\n7-993-602-78-48 (Т-Банк)", reply_markup=main_menu())
 
 # Хэндлер для кнопки "⬅️ Назад"
 @bot.message_handler(func=lambda message: message.text == "⬅️ Назад")
