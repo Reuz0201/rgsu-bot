@@ -22,8 +22,14 @@ month_replace = {
 user_state = {}
 
 # Настройка логирования
-logging.basicConfig(filename="broadcast_errors.log", level=logging.ERROR, 
-                    format="%(asctime)s - %(message)s")
+logging.basicConfig(
+    level=logging.DEBUG,  # Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    format="%(asctime)s - %(levelname)s - %(message)s",  # Формат сообщений
+    handlers=[
+        logging.StreamHandler(),  # Вывод в консоль
+        logging.FileHandler("bot.log")  # Вывод в файл
+    ]
+)
 
 # Глобальная переменная для хранения текста рассылки
 broadcast_text = None
@@ -519,50 +525,56 @@ def back_handler(message):
         user_state[message.chat.id] = 'main_menu'
 
 def load_schedule_cache():
+    """
+    Загружает кэш расписания из файла schedule_cache.json.
+    Если файл не существует или содержит ошибки, возвращает пустой словарь.
+    """
     if not os.path.exists("schedule_cache.json"):
+        logging.debug("Файл schedule_cache.json не найден. Возвращаем пустой кэш.")
         return {}
     try:
         with open("schedule_cache.json", "r", encoding="utf-8") as f:
             return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logging.error(f"Ошибка при загрузке кэша: {e}")
         return {}
 
-# Функция для сохранения данных в JSON-файл
 def save_schedule_cache(cache):
-    with open("schedule_cache.json", "w", encoding="utf-8") as f:
-        json.dump(cache, f, ensure_ascii=False, indent=4)
-
-def get_schedule(group, date):
     """
-    Получает расписание из кэша или через Playwright.
-    Если расписание содержит ошибку, оно не сохраняется в кэш.
+    Сохраняет кэш расписания в файл schedule_cache.json.
     """
-    cache = load_schedule_cache()
+    try:
+        with open("schedule_cache.json", "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False, indent=4)
+        logging.debug("Кэш успешно сохранён в schedule_cache.json.")
+    except IOError as e:
+        logging.error(f"Ошибка при сохранении кэша: {e}")
 
-    # Проверяем, есть ли расписание в кэше
-    if group in cache and date in cache[group]:
-        return cache[group][date]
-
-    # Если данных нет, запрашиваем через Playwright
-    schedule = fetch_schedule_via_playwright(group, date)
-
-    # Проверяем, содержит ли расписание ошибку или сообщение о выходном дне
-    if "❌ Ошибка загрузки" in schedule or "❌ Нет занятий" in schedule or "❌ Выходной или нет занятий" in schedule:
-        return schedule  # Не сохраняем ошибки или сообщения о выходных в кэш
-
-    # Сохраняем данные в кэш
-    if group not in cache:
-        cache[group] = {}
-    cache[group][date] = schedule
-    save_schedule_cache(cache)
-
-    return schedule
+def is_error_message(schedule):
+    """
+    Проверяет, содержит ли сообщение об ошибке.
+    """
+    error_indicators = [
+        "❌ ошибка загрузки",  # Проверяем в нижнем регистре
+        "❌ нет занятий",
+        "❌ выходной",
+        "не удалось",
+        "ошибка загрузки",  # Без эмодзи
+        "нет занятий",      # Без эмодзи
+        "выходной",         # Без эмодзи
+    ]
+    # Приводим сообщение к нижнему регистру для универсальной проверки
+    schedule_lower = schedule.lower()
+    is_error = any(indicator in schedule_lower for indicator in error_indicators)
+    logging.debug(f"Проверка на ошибку: {is_error} (сообщение: {schedule})")
+    return is_error
 
 def fetch_schedule_via_playwright(group, date):
     """
     Получает расписание через Playwright.
     Возвращает строку с расписанием или сообщение об ошибке.
     """
+    logging.debug(f"Запрос расписания для группы {group} на {date} через Playwright.")
     url = f"https://rgsu.net/for-students/timetable/timetable/?group={group}&date={date}&week=9"
 
     with sync_playwright() as p:
@@ -641,6 +653,36 @@ def fetch_schedule_via_playwright(group, date):
         finally:
             # Закрываем браузер
             browser.close()
+
+def get_schedule(group, date):
+    """
+    Получает расписание из кэша или через Playwright.
+    Если расписание содержит ошибку, оно не сохраняется в кэш.
+    """
+    logging.debug(f"Функция get_schedule вызвана для группы {group} и даты {date}.")
+    cache = load_schedule_cache()
+
+    # Проверяем, есть ли расписание в кэше
+    if group in cache and date in cache[group]:
+        logging.debug(f"Расписание для группы {group} на {date} найдено в кэше.")
+        return cache[group][date]
+
+    # Если данных нет, запрашиваем через Playwright
+    schedule = fetch_schedule_via_playwright(group, date)
+    logging.debug(f"Получено расписание: {schedule}")
+
+    # Проверяем, содержит ли расписание ошибку
+    if is_error_message(schedule):
+        logging.debug(f"Обнаружена ошибка в расписании: {schedule}")
+        return schedule  # Не сохраняем ошибки в кэш
+
+    # Сохраняем данные в кэш, только если это не ошибка
+    if group not in cache:
+        cache[group] = {}
+    cache[group][date] = schedule
+    save_schedule_cache(cache)
+    logging.debug(f"Расписание для группы {group} на {date} сохранено в кэш.")
+    return schedule
 
 def read_groups_file():
     """
